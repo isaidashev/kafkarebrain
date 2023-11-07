@@ -1,0 +1,18 @@
+---
+- name: Fetch file server.properties to variable
+  ansible.builtin.slurp:
+    src: /opt/kafka/config/server.properties
+  register: _file_server_properties
+
+- name: Get value broker.id from config file
+  ansible.builtin.set_fact:
+    _broker_id: "{{ _file_server_properties.content | b64decode | regex_search('^broker.id=.*$', multiline=True) }}"
+
+- name: Set broker.id to config file
+  when:
+    - _broker_id | length > 0
+    - _broker_id.split('=') != ansible_play_hosts_all.index(inventory_hostname)
+  ansible.builtin.lineinfile:
+    path: /opt/kafka/config/server.properties
+    regexp: '^broker.id=.*$'
+    line: "broker.id={{ ansible_play_hosts_all.index(inventory_hostname) }}"

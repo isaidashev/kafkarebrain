@@ -1,0 +1,87 @@
+---
+- name: Create group kafka
+  ansible.builtin.group:
+    name: "{{ kafka_group }}"
+    state: present
+
+- name: Create user kafka and add to group kafka
+  ansible.builtin.user:
+    name: "{{ kafka_user }}"
+    groups: "{{ kafka_group }}"
+    shell: /usr/sbin/nologin
+    system: true
+    append: true
+
+- name: Install package java-17-openjdk
+  ansible.builtin.yum:
+    name: java-17-openjdk
+    state: present
+
+- name: Create folder for kafka and zookeeper
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+  loop:
+    - "{{ kafka_archive.dest }}"
+    - "{{ kafka_zookeeper_datadir }}"
+    - "{{ kafka_datadir }}"
+
+- name: Check that the folder exists
+  ansible.builtin.stat:
+    path: "{{ kafka_archive.dest }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}/"
+  register: _archive_folder
+
+- name: Download file archive from the site
+  when: not _archive_folder.stat.exists
+  ansible.builtin.unarchive:
+    src: "{{ kafka_archive.url }}"
+    dest: "{{ kafka_archive.dest }}"
+    remote_src: true
+    keep_newer: true
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: '0750'
+
+- name: Copy folder content to destination instalation place
+  when: not _archive_folder.stat.exists
+  ansible.builtin.copy:
+    remote_src: true
+    src: "{{ kafka_archive.dest }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}/"
+    dest: "{{ kafka_archive.dest }}"
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: '0750'
+
+- name: Cerate systemd and configuration files
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dst }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - src: zookeeper.service.j2
+      dst: /etc/systemd/system/zookeeper.service
+    - src: zookeeper.properties.j2
+      dst: "{{ kafka_archive.dest }}/config/zookeeper.properties"
+    - src: kafka.service.j2
+      dst: /etc/systemd/system/kafka.service
+    - src: kafka.properties.j2
+      dst: "{{ kafka_archive.dest }}/config/server.properties"
+
+- name: Set broker id
+  ansible.builtin.import_tasks: broker_id.yml
+  tags: set_broker_id
+
+- name: Run and register systemd service
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - zookeeper.service
+    - kafka.service

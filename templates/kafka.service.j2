@@ -1,0 +1,12 @@
+[Unit]
+After=network.target remote-fs.target
+
+[Service]
+Type=simple
+User={{ kafka_user }}
+ExecStart=/opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+ExecStop=/home/kafka/kafka/bin/kafka-server-stop.sh
+Restart=on-abnormal
+
+[Install]
+WantedBy=multi-user.target
